@@ -10,6 +10,7 @@ from safety import DISCLAIMER
 from auth import configured,password_matches,issue,require,websocket_authorized
 from telemetry_gateway import router as telemetry_router
 from device_catalog import router as devices_router
+from patient_replay import parse_csv,normalized_csv
 app=FastAPI(title="AnestheSense CDS API",version="0.1.0",description=DISCLAIMER)
 WEB_DIR=Path(__file__).resolve().parent / "web"
 app.mount("/web",StaticFiles(directory=str(WEB_DIR)),name="web")
@@ -31,6 +32,19 @@ def login(body:LoginRequest,response:Response):
 def logout(response:Response):
     response.delete_cookie("anesthesense_session",path="/")
     return {"authenticated":False}
+@app.post("/api/v1/csv/import")
+async def import_csv(request:Request,user:str=Depends(require)):
+    if request.headers.get("content-type","").split(";")[0] not in ("text/csv","application/octet-stream","text/plain"):
+        raise HTTPException(415,"Upload CSV bytes with Content-Type: text/csv")
+    if request.headers.get("content-length") and int(request.headers["content-length"])>10_000_000:
+        raise HTTPException(413,"CSV exceeds 10 MB limit")
+    raw=await request.body()
+    try:
+        parsed=parse_csv(raw)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc))
+    return {**{k:v for k,v in parsed.items() if k!="case"},"case":parsed["case"].model_dump(mode="json"),"normalized_csv":normalized_csv(parsed["case"].frames)}
+
 class SimRequest(BaseModel):
     scenario:str="Normotensive"
     minutes:int=Field(default=30,ge=3,le=240)
