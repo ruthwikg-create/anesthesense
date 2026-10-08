@@ -7,7 +7,7 @@ function post(path,body){return request(API+path,{method:"POST",headers:{"Conten
 function currentCase(){if(!dataset)return null;return {...dataset,surgical_phase:$("phase").value,frames:dataset.frames.slice(0,index+1)}}
 function fmt(v,d=1){return v==null||!Number.isFinite(Number(v))?"—":Number(v).toFixed(d)}
 function showError(err){$("explanation").textContent="Unable to analyze: "+err.message;$("api-status").textContent="Backend unavailable"}
-function changeView(name){document.querySelectorAll(".view").forEach(e=>e.classList.toggle("active",e.id===name));document.querySelectorAll("#nav button").forEach(e=>e.classList.toggle("active",e.dataset.view===name));$("page-title").textContent=({monitor:"Patient Monitoring",data:"Data & Replay",analysis:"Trajectory Analysis",report:"Research Report & Audit"})[name]}
+function changeView(name){document.querySelectorAll(".view").forEach(e=>e.classList.toggle("active",e.id===name));document.querySelectorAll("#nav button").forEach(e=>e.classList.toggle("active",e.dataset.view===name));$("page-title").textContent=({monitor:"Patient Monitoring",data:"Data & Replay",analysis:"Trajectory Analysis",report:"Research Report & Audit",equipment:"Equipment Integration"})[name]}
 document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>changeView(b.dataset.view));
 function updateVitals(frame){$("vitals").innerHTML=keys.map(([key,unit])=>{const v=key==="MAP"?(frame.MAP??(frame.SBP!=null&&frame.DBP!=null?frame.DBP+(frame.SBP-frame.DBP)/3:null)):frame[key];const source=key==="MAP"?(frame.MAP!=null?"MEASURED":"CALCULATED"):"SOURCE VALUE";return '<div class="vital"><div class="name">'+key+'</div><div class="number">'+fmt(v,key==="TOF_ratio"?2:1)+' <span class="unit">'+unit+'</span></div><div class="source">'+source+'</div></div>'}).join("")}
 function drawChart(){const canvas=$("map-chart"),rect=canvas.getBoundingClientRect(),ratio=window.devicePixelRatio||1;canvas.width=Math.max(300,rect.width*ratio);canvas.height=Math.max(180,rect.height*ratio);const ctx=canvas.getContext("2d");ctx.scale(ratio,ratio);const w=canvas.width/ratio,h=canvas.height/ratio,p={l:45,r:16,t:18,b:34};ctx.clearRect(0,0,w,h);const frames=dataset?.frames.slice(0,index+1)||[];if(!frames.length)return;const start=new Date(frames[0].timestamp).getTime(),xvals=frames.map(f=>(new Date(f.timestamp).getTime()-start)/60000),values=frames.map(f=>f.MAP??(f.SBP!=null&&f.DBP!=null?f.DBP+(f.SBP-f.DBP)/3:null));const maxX=Math.max(20,xvals.at(-1)+15),minY=Math.max(0,Math.min(45,...values.filter(v=>v!=null))-8),maxY=Math.max(105,...values.filter(v=>v!=null))+7;const x=v=>p.l+v/maxX*(w-p.l-p.r),y=v=>h-p.b-(v-minY)/(maxY-minY)*(h-p.t-p.b);ctx.font="11px sans-serif";ctx.strokeStyle="#27394b";ctx.fillStyle="#8da6ba";for(let v=50;v<=110;v+=10){if(v<minY||v>maxY)continue;ctx.beginPath();ctx.moveTo(p.l,y(v));ctx.lineTo(w-p.r,y(v));ctx.stroke();ctx.fillText(String(v),8,y(v)+4)}for(let i=0;i<=5;i++){const v=i*maxX/5;ctx.fillText(v.toFixed(0),x(v)-5,h-10)}function line(points,color,dashed=false){ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash(dashed?[6,5]:[]);ctx.beginPath();let active=false;for(const [a,b] of points){if(b==null){active=false;continue}if(!active){ctx.moveTo(x(a),y(b));active=true}else ctx.lineTo(x(a),y(b))}ctx.stroke();ctx.setLineDash([])}line([[0,65],[maxX,65]],"#e1b15c",true);line([[0,55],[maxX,55]],"#e56e73",true);line(xvals.map((v,i)=>[v,values[i]]),"#4dbcd9");const f=assessment?.forecast;if(f?.predicted_map_10!=null){line([[xvals.at(-1),values.at(-1)],[xvals.at(-1)+10,f.predicted_map_10],[xvals.at(-1)+15,f.predicted_map_15]],"#b8a3f4",true)}}
@@ -30,6 +30,7 @@ async function initAuth(){
  }catch(e){$("login-error").textContent="Unable to reach backend: "+e.message}
 }
 function showWorkstation(){
+ loadEquipment();
  $("login-screen").hidden=true;$("workstation").hidden=false;
  request("/health").then(()=>{$("api-status").textContent="Backend online"}).catch(()=>{$("api-status").textContent="Backend unavailable"});
  start();
@@ -76,3 +77,15 @@ $("live-connect").onclick=()=>{
  ws.onclose=()=>{if(liveSocket===ws){liveSocket=null;$("live-status").textContent="Feed disconnected";$("live-connect").textContent="◉ Connect research feed"}};
 };
 initAuth();
+
+let equipment=[];
+async function loadEquipment(){
+ try{const result=await request("/api/v1/devices/catalog");equipment=result.devices;renderEquipment()}
+ catch(e){$("device-list").textContent="Equipment catalog unavailable: "+e.message}
+}
+function renderEquipment(){
+ const query=($("device-search")?.value||"").toLowerCase();
+ const matches=equipment.filter(d=>[d.manufacturer,d.family,d.category,...d.signals].join(" ").toLowerCase().includes(query));
+ $("device-list").innerHTML=matches.map(d=>'<div class="device-card"><div class="caption">'+escapeHTML(d.category.replaceAll("_"," ").toUpperCase())+'</div><h3>'+escapeHTML(d.manufacturer)+' · '+escapeHTML(d.family)+'</h3><div class="subtle">'+escapeHTML(d.signals.join(" · "))+'</div><p class="subtle">Interface: '+escapeHTML(d.connection_options.join(", "))+'</p><div class="pill muted">'+(d.integration_status==="normalized_adapter"?"NORMALIZED ADAPTER ONLY":"PLANNED / NOT CONNECTED")+'</div><p class="subtle">'+escapeHTML(d.validation_note)+'</p></div>').join("")||'<p class="subtle">No matching equipment</p>';
+}
+$("device-search").oninput=renderEquipment;
