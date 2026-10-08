@@ -50,3 +50,17 @@ GitHub Actions runs both checks on pushes and pull requests.
 
 ## Ethics and future work
 This is not a medical device or clinically validated decision aid. Future research includes signal artifact detection, prospective evaluation on authorized de-identified datasets, retrospective forecast error/lead-time analysis, calibrated uncertainty, optional strictly bounded AI explanation, and independent clinical review. No comparative superiority over commercial hypotension prediction systems is claimed.
+
+
+## Browser-based web app
+
+The FastAPI server now serves the responsive HTML/CSS/JavaScript research workstation at **http://127.0.0.1:8000/**. Run:
+
+```powershell
+py -3.11 -m venv venv
+.\\venv\\Scripts\\Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Open http://127.0.0.1:8000/ in a browser. The original Streamlit dashboard remains optional at port 8501. The browser app uses the same authoritative FastAPI deterministic analysis engine. Its client-side CSV importer is an initial research convenience parser and does not yet cover all quoted-field edge cases or server-side CSV verification. Do not use identifiable patient data.
