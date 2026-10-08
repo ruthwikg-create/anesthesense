@@ -7,6 +7,7 @@ from fastapi import APIRouter,Depends,HTTPException,WebSocket,WebSocketDisconnec
 from auth import require,websocket_authorized
 from schema import TelemetryFrame,PatientBaseline,PatientTelemetry
 from agent import analyze
+from intellivue_adapter import ExportPacket,normalize
 router=APIRouter(prefix="/api/v1/telemetry",tags=["Research telemetry"])
 _frames=deque(maxlen=240)
 _clients=set()
@@ -28,6 +29,15 @@ async def ingest(frame:TelemetryFrame,user:str=Depends(require)):
                 except asyncio.QueueEmpty:pass
             queue.put_nowait(event)
     return {"accepted":True,"buffered_frames":len(_frames),"research_only":True}
+@router.post("/intellivue/ingest")
+async def intellivue_ingest(packet:ExportPacket,user:str=Depends(require)):
+    try:
+        frame,metadata=normalize(packet)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc))
+    result=await ingest(frame,user)
+    return {**result,"adapter":metadata}
+
 @router.websocket("/stream")
 async def stream(ws:WebSocket):
     if not websocket_authorized(ws):
