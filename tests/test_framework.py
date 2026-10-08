@@ -20,7 +20,7 @@ def test_missing_weights():
     f=TelemetryFrame(timestamp=datetime.now(timezone.utc),MAP=70,HR=80)
     assert haii(f)["weight_coverage"]==.45
 def test_csv():
-    p=parse_csv(b"minute;SBP;DBP;HR\\n0;120;80;75\\n1;110;70;80\\n")
+    p=parse_csv(b"minute;SBP;DBP;HR\n0;120;80;75\n1;110;70;80\n")
     assert p["rows_used"]==2
     assert p["case"].frames[0].map_value>90
     assert "minute" in normalized_csv(p["case"].frames)
