@@ -6,6 +6,7 @@ from agent import analyze
 from simulation import simulate,SCENARIOS
 from patient_replay import parse_csv,normalized_csv
 from safety import DISCLAIMER
+from research_report import retrospective_report
 st.set_page_config(page_title="AnestheSense | Research Workstation",layout="wide",page_icon="🫀")
 st.markdown("""<style>.stApp{background:#0b1420;color:#e6edf5}div[data-testid="stMetric"]{background:#152437;border:1px solid #294055;border-radius:8px;padding:14px}</style>""",unsafe_allow_html=True)
 st.title("ANESTHESENSE")
@@ -95,7 +96,7 @@ with tabs[5]:
         from schema import PatientTelemetry
         case=PatientTelemetry.model_validate(st.session_state["case"])
         assessment=analyze(case)
-        report={"case_id":case_id,"source":st.session_state.get("metadata",{}),"rows":len(case.frames),"minimum_map":min((f.map_value for f in case.frames if f.map_value is not None),default=None),"assessment":assessment,"safety_boundary":DISCLAIMER}
+        report=retrospective_report(case,case_id=case_id,source=st.session_state.get("metadata",{}).get("source","De-identified CSV"))
         st.subheader("Retrospective research report")
         st.json(report)
         st.download_button("Download audit JSON",json.dumps(report,indent=2,default=str),file_name="anesthesense_audit.json",mime="application/json")
