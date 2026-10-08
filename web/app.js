@@ -22,4 +22,28 @@ function reportObject(){if(!dataset||!assessment)return null;const vals=dataset.
 function updateReport(){const r=reportObject();$("report-content").textContent=r?JSON.stringify(r,null,2):"No dataset analyzed."}
 function exportReport(){const r=reportObject();if(r)download("anesthesense_audit.json",JSON.stringify(r,null,2),"application/json")}
 $("export-top").onclick=exportReport;$("download-report").onclick=exportReport;window.addEventListener("resize",drawChart);
-request("/health").then(()=>{$("api-status").textContent="Backend online"}).catch(()=>{$("api-status").textContent="Backend unavailable"});start();
+async function initAuth(){
+ try{
+ const status=await request("/api/v1/auth/status");
+ if(!status.configured){$("login-error").textContent="Administrator setup required: configure login environment variables.";return}
+ if(status.authenticated){showWorkstation();return}
+ }catch(e){$("login-error").textContent="Unable to reach backend: "+e.message}
+}
+function showWorkstation(){
+ $("login-screen").hidden=true;$("workstation").hidden=false;
+ request("/health").then(()=>{$("api-status").textContent="Backend online"}).catch(()=>{$("api-status").textContent="Backend unavailable"});
+ start();
+}
+$("login-form").onsubmit=async e=>{
+ e.preventDefault();$("login-error").textContent="";
+ try{
+ await request("/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("login-user").value,password:$("login-password").value})});
+ $("login-password").value="";showWorkstation()
+ }catch(err){$("login-error").textContent=err.message}
+};
+$("logout").onclick=async()=>{
+ clearInterval(timer);timer=null;dataset=null;assessment=null;
+ try{await request("/api/v1/auth/logout",{method:"POST"})}catch{}
+ $("workstation").hidden=true;$("login-screen").hidden=false;
+};
+initAuth();
