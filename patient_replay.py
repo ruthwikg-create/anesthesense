@@ -6,15 +6,15 @@ FIELDS=["minute","MAP","HR","SBP","DBP","SVV","EtCO2","SpO2","CVP","BIS","TOF_tw
 def parse_csv(data:bytes):
     if len(data)>10_000_000: raise ValueError("CSV exceeds 10 MB limit")
     decoded=None
-    for enc in (["utf-16"] if data.startswith((b"\\xff\\xfe",b"\\xfe\\xff")) else ["utf-8-sig","utf-16","cp1252"]):
+    for enc in (["utf-16"] if data.startswith((b"\xff\xfe",b"\xfe\xff")) else ["utf-8-sig","utf-16","cp1252"]):
         try:
             decoded=data.decode(enc)
-            if "\\x00" in decoded: continue
+            if "\x00" in decoded: continue
             break
         except UnicodeError: continue
     if decoded is None or not decoded.strip(): raise ValueError("CSV is empty or unreadable")
     sample=decoded[:4096]
-    try: dialect=csv.Sniffer().sniff(sample,delimiters=",;\\t|")
+    try: dialect=csv.Sniffer().sniff(sample,delimiters=",;\t|")
     except csv.Error: dialect=csv.excel
     reader=csv.DictReader(io.StringIO(decoded),dialect=dialect)
     if not reader.fieldnames: raise ValueError("CSV has no header")
