@@ -8,9 +8,11 @@ from agent import analyze
 from simulation import simulate,SCENARIOS
 from safety import DISCLAIMER
 from auth import configured,password_matches,issue,require,websocket_authorized
+from telemetry_gateway import router as telemetry_router
 app=FastAPI(title="AnestheSense CDS API",version="0.1.0",description=DISCLAIMER)
 WEB_DIR=Path(__file__).resolve().parent / "web"
 app.mount("/web",StaticFiles(directory=str(WEB_DIR)),name="web")
+app.include_router(telemetry_router)
 class LoginRequest(BaseModel):
     username:str
     password:str
