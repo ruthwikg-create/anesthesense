@@ -16,7 +16,25 @@ async function start(){disconnectLive();clearInterval(timer);$("start").disabled
 $("start").onclick=start;$("pause").onclick=()=>{if(timer){clearInterval(timer);timer=null;$("pause").textContent="▶ Resume"}else if(dataset){timer=setInterval(async()=>{if(index>=dataset.frames.length-1){clearInterval(timer);timer=null;return}index++;await render()},1000);$("pause").textContent="Ⅱ Pause"}};$("reset").onclick=()=>{clearInterval(timer);timer=null;index=0;render()};$("phase").onchange=render;
 function download(name,content,type){const a=document.createElement("a"),url=URL.createObjectURL(new Blob([content],{type}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function normalized(){if(!dataset)return "";const cols=["minute","MAP","HR","SBP","DBP","SVV","EtCO2","SpO2","CVP","BIS","TOF_twitches","TOF_ratio"];const t=new Date(dataset.frames[0].timestamp).getTime();return [cols.join(","),...dataset.frames.map(f=>cols.map(k=>{let v=k==="minute"?(new Date(f.timestamp).getTime()-t)/60000:k==="MAP"?(f.MAP??(f.SBP!=null&&f.DBP!=null?f.DBP+(f.SBP-f.DBP)/3:null)):f[k];return v==null?"":v}).join(","))].join("\n")}
-$("csv-file").onchange=async e=>{clearInterval(timer);const file=e.target.files[0];if(!file)return;verified=false;$("verify").disabled=true;$("analyze-csv").disabled=true;try{if(file.size>10_000_000)throw Error("File exceeds 10 MB");const bytes=new Uint8Array(await file.arrayBuffer());let text;try{text=new TextDecoder(bytes[0]===255&&bytes[1]===254?"utf-16le":bytes[0]===254&&bytes[1]===255?"utf-16be":"utf-8",{fatal:true}).decode(bytes)}catch{text=new TextDecoder("windows-1252").decode(bytes)}text=text.replace(/^\uFEFF/,"");const rows=text.trim().split(/\r?\n/);if(rows.length<2)throw Error("No data rows found");const header=rows[0],delimiter=[",",";","\t","|"].sort((a,b)=>header.split(b).length-header.split(a).length)[0],columns=header.split(delimiter).map(x=>x.trim().toLowerCase().replace(/[^a-z0-9]/g,""));const aliases={MAP:["map","meanarterialpressure"],SBP:["sbp","systolic","systolicbp"],DBP:["dbp","diastolic","diastolicbp"],HR:["hr","heartrate","pulse"],SpO2:["spo2","oxygensaturation"],EtCO2:["etco2","endtidalco2"],SVV:["svv"],CVP:["cvp"],BIS:["bis","bispectralindex"],TOF_ratio:["tofratio"],TOF_twitches:["toftwitches","tof"],minute:["minute","minutes","time"]};const mapping=Object.fromEntries(Object.entries(aliases).map(([k,v])=>[k,columns.findIndex(c=>v.includes(c))]));if(mapping.HR<0||(mapping.MAP<0&&(mapping.SBP<0||mapping.DBP<0)))throw Error("Required HR and MAP or SBP/DBP columns missing");let skipped=0,frames=[];for(let i=1;i<rows.length;i++){const cols=rows[i].split(delimiter);try{const values={};for(const k of Object.keys(aliases)){if(k==="minute")continue;const raw=mapping[k]>=0?cols[mapping[k]]?.trim():"";values[k]=raw?Number(raw):null;if(values[k]!=null&&!Number.isFinite(values[k]))throw Error("Invalid number")}if(values.SBP!=null&&values.DBP!=null&&values.SBP<=values.DBP)throw Error("Invalid BP");if(values.HR==null||(values.MAP==null&&(values.SBP==null||values.DBP==null)))throw Error("Missing required value");const minute=mapping.minute>=0?Number(cols[mapping.minute]):i-1;if(!Number.isFinite(minute))throw Error("Invalid time");frames.push({timestamp:new Date(Date.UTC(2025,0,1)+minute*60000).toISOString(),...values})}catch{skipped++}}if(!frames.length)throw Error("No valid rows");frames.sort((a,b)=>a.timestamp.localeCompare(b.timestamp));const first=frames[0];dataset={baseline:{baseline_map:first.MAP??(first.DBP+(first.SBP-first.DBP)/3)},surgical_phase:$("phase").value,frames};metadata={source:"De-identified CSV",filename:file.name,rows_read:rows.length-1,rows_used:frames.length,rows_skipped:skipped,column_mapping:mapping};index=frames.length-1;$("import-info").textContent=JSON.stringify(metadata,null,2);$("preview").innerHTML="<table><thead><tr>"+Object.keys(first).map(k=>"<th>"+escapeHTML(k)+"</th>").join("")+"</tr></thead><tbody>"+frames.slice(0,15).map(f=>"<tr>"+Object.values(f).map(v=>"<td>"+escapeHTML(v??"—")+"</td>").join("")+"</tr>").join("")+"</tbody></table>";$("verify").disabled=false;$("export-csv").disabled=false;await render()}catch(err){$("import-info").textContent="Import error: "+err.message}};
+$("csv-file").onchange=async e=>{
+ clearInterval(timer);timer=null;disconnectLive();
+ const file=e.target.files[0];if(!file)return;
+ verified=false;$("verify").disabled=true;$("analyze-csv").disabled=true;$("replay-start").disabled=true;
+ try{
+  if(file.size>10_000_000)throw Error("CSV exceeds 10 MB");
+  const result=await request("/api/v1/csv/import",{method:"POST",headers:{"Content-Type":"text/csv"},body:await file.arrayBuffer()});
+  dataset=result.case;metadata={source:"Historical CSV replay — NOT LIVE",filename:file.name,sha256:result.sha256,mapping:result.mapping,rows_read:result.rows_read,rows_used:result.rows_used,rows_skipped:result.rows_skipped,sampling_interval_minutes:result.sampling_interval_minutes,missing_optional_signals:result.missing_optional_signals};
+  index=dataset.frames.length-1;
+  $("import-info").textContent=JSON.stringify(metadata,null,2);
+  const first=dataset.frames[0];
+  $("preview").innerHTML="<table><thead><tr>"+Object.keys(first).map(k=>"<th>"+escapeHTML(k)+"</th>").join("")+"</tr></thead><tbody>"+dataset.frames.slice(0,15).map(f=>"<tr>"+Object.values(f).map(v=>"<td>"+escapeHTML(v??"—")+"</td>").join("")+"</tr>").join("")+"</tbody></table>";
+  $("verify").disabled=false;$("export-csv").disabled=false;
+  $("replay-start").disabled=false;$("replay-pause").disabled=false;$("replay-seek").disabled=false;
+  $("replay-seek").max=String(dataset.frames.length-1);$("replay-seek").value=String(index);
+  $("replay-position").textContent="Recorded data • "+dataset.frames.length+" frames";
+  await render();
+ }catch(err){$("import-info").textContent="Import error: "+err.message}
+};
 $("verify").onclick=()=>{verified=true;$("analyze-csv").disabled=false;$("import-info").textContent+="\nDataset verified for research/demo analysis."};$("analyze-csv").onclick=async()=>{if(!verified)return;await render();changeView("analysis")};$("export-csv").onclick=()=>download("anesthesense_normalized.csv",normalized(),"text/csv");
 function reportObject(){if(!dataset||!assessment)return null;const vals=dataset.frames.map(f=>f.MAP??(f.SBP!=null&&f.DBP!=null?f.DBP+(f.SBP-f.DBP)/3:null)).filter(v=>v!=null);return {case_id:$("case-id").value,data_source:metadata,frames_analyzed:index+1,minimum_map:Math.min(...vals),maximum_map:Math.max(...vals),assessment,rule_version:assessment.versions?.rules,ai_status:"disabled",safety_boundary:"Research/demo only; not clinically validated or for patient care."}}
 function updateReport(){const r=reportObject();$("report-content").textContent=r?JSON.stringify(r,null,2):"No dataset analyzed."}
@@ -89,3 +107,37 @@ function renderEquipment(){
  $("device-list").innerHTML=matches.map(d=>'<div class="device-card"><div class="caption">'+escapeHTML(d.category.replaceAll("_"," ").toUpperCase())+'</div><h3>'+escapeHTML(d.manufacturer)+' · '+escapeHTML(d.family)+'</h3><div class="subtle">'+escapeHTML(d.signals.join(" · "))+'</div><p class="subtle">Interface: '+escapeHTML(d.connection_options.join(", "))+'</p><div class="pill muted">'+(d.integration_status==="normalized_adapter"?"NORMALIZED ADAPTER ONLY":"PLANNED / NOT CONNECTED")+'</div><p class="subtle">'+escapeHTML(d.validation_note)+'</p></div>').join("")||'<p class="subtle">No matching equipment</p>';
 }
 $("device-search").oninput=renderEquipment;
+
+let replayRunning=false;
+function stopReplay(){clearInterval(timer);timer=null;replayRunning=false;$("replay-pause").textContent="▶ Resume"}
+async function replayStep(){
+ if(!dataset||metadata?.source!=="Historical CSV replay — NOT LIVE"){stopReplay();return}
+ if(index>=dataset.frames.length-1){stopReplay();return}
+ index++;
+ $("replay-seek").value=String(index);
+ $("replay-position").textContent="Historical frame "+(index+1)+" / "+dataset.frames.length+" • NOT LIVE";
+ await render();
+}
+function scheduleReplay(){
+ if(!replayRunning||!dataset)return;
+ const speed=Number($("replay-speed").value)||1;
+ const next=dataset.frames[index+1];
+ if(!next){stopReplay();return}
+ const delta=new Date(next.timestamp)-new Date(dataset.frames[index].timestamp);
+ const delay=Math.max(50,Math.min(2000,Math.max(0,delta)/speed));
+ timer=setTimeout(async()=>{await replayStep();scheduleReplay()},delay);
+}
+$("replay-start").onclick=()=>{
+ if(!dataset||metadata?.source!=="Historical CSV replay — NOT LIVE")return;
+ stopReplay();index=0;$("replay-seek").value="0";replayRunning=true;
+ $("replay-pause").textContent="Ⅱ Pause";render();scheduleReplay();changeView("monitor");
+};
+$("replay-pause").onclick=()=>{
+ if(replayRunning){stopReplay();return}
+ if(!dataset||metadata?.source!=="Historical CSV replay — NOT LIVE")return;
+ replayRunning=true;$("replay-pause").textContent="Ⅱ Pause";scheduleReplay();
+};
+$("replay-seek").oninput=async e=>{
+ if(!dataset||metadata?.source!=="Historical CSV replay — NOT LIVE")return;
+ stopReplay();index=Number(e.target.value);$("replay-position").textContent="Historical frame "+(index+1)+" / "+dataset.frames.length+" • NOT LIVE";await render();
+};
