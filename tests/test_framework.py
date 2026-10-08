@@ -24,7 +24,15 @@ def test_csv():
     assert p["rows_used"]==2
     assert p["case"].frames[0].map_value>90
     assert "minute" in normalized_csv(p["case"].frames)
-def test_api():
+def test_api(monkeypatch):
+    import hashlib
+    monkeypatch.setattr("auth.SECRET","test-secret-with-at-least-32-characters-123")
+    monkeypatch.setattr("auth.USER","researcher")
+    monkeypatch.setattr("auth.PASSWORD_HASH",hashlib.sha256(b"test-password").hexdigest())
     c=TestClient(app)
     assert c.get("/health").status_code==200
+    assert c.post("/api/v1/simulate/analyze",json={"scenario":"Normotensive","minutes":10}).status_code==401
+    assert c.post("/api/v1/auth/login",json={"username":"researcher","password":"test-password"}).status_code==200
     assert c.post("/api/v1/simulate/analyze",json={"scenario":"Normotensive","minutes":10}).status_code==200
+    assert c.post("/api/v1/auth/logout").status_code==200
+    assert c.post("/api/v1/simulate/analyze",json={"scenario":"Normotensive","minutes":10}).status_code==401
