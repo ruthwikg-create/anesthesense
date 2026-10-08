@@ -1,15 +1,20 @@
 from fastapi import FastAPI,HTTPException,WebSocket,WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from pydantic import BaseModel,Field
 from schema import PatientTelemetry
 from agent import analyze
 from simulation import simulate,SCENARIOS
 from safety import DISCLAIMER
 app=FastAPI(title="AnestheSense CDS API",version="0.1.0",description=DISCLAIMER)
+WEB_DIR=Path(__file__).resolve().parent / "web"
+app.mount("/web",StaticFiles(directory=str(WEB_DIR)),name="web")
 class SimRequest(BaseModel):
     scenario:str="Normotensive"
     minutes:int=Field(default=30,ge=3,le=240)
 @app.get("/")
-def root():return {"name":"AnestheSense","version":"0.1.0","disclaimer":DISCLAIMER}
+def root():return FileResponse(WEB_DIR / "index.html")
 @app.get("/health")
 def health():return {"status":"ok","version":"0.1.0","research_only":True}
 @app.post("/api/v1/predict")
